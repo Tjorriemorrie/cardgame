@@ -1,0 +1,131 @@
+WHITE:
+
+creatures:
+ - 3/3: 5
+ - 2/3: 4
+ - 2/2: 2
+ - 1/3: 2
+ - 2/1: 2
+ - 2/4: 1
+ - 4/3: 1
+ - 3/7: 1
+ - 1/1: 1
+ - 4/4: 1
+ - 3/2: 1
+ - 3/1: 1
+ - 1/2: 1
+ - 1/4: 1
+ - 3/4: 1
+ - flying: 6
+ - vigilance: 3
+ - lifelink: 1
+ - sacrifice: 1
+ - defender: 1
+instants:
+ - Target creature gets +1/+7 until end of turn. (1p)
+ - Creatures you control get +2/+1 until end of turn. (2pp)
+ - Destroy target artifact or enchantment. You gain 4 life. (2p)
+ - Exile target permanent with converted mana cost 1. (p)
+ - Creatures you control get +1/+0 and gain indestructible until end of turn. (2p)
+ - Target creature gets +2/+2 and gains flying until end of turn. (1p)
+ - You gain 3 life. Draw a card. (1p)
+enchantments:
+  - Whenever a creature or planeswalker you control dies, you may sacrifice Ajani's Last Stand. If
+  you do, create a 4/4 white Avatar creature token with flying. When a spell or ability an opponent
+  controls causes you to discard this card, if you control a Plains, create a 4/4 white Avatar
+  creature token with flying. (2pp)
+  - Whenever a creature enters the battlefield under your control, you gain 1 life. (p)
+  - When Hieromancer's Cage enters the battlefield, exile target nonland permanent an opponent
+  controls until Hieromancer's Cage leaves the battlefield. (3p)
+enchant creature:
+  - Enchanted creature gets +2/+2. (1p)
+  - Enchant creatureWhen Knightly Valor enters the battlefield, create a 2/2 white Knight creature token with vigilance.
+ (Attacking doesn't cause it to tap.) Enchanted creature gets +2/+2 and has vigilance. (4p)
+  - Enchanted creature can't attack or block. (2p)
+sorcery:
+ - Choose one —• Destroy all creatures.• Destroy all artifacts and enchantments. (3pp)
+ - Destroy target tapped creature. (1p)
+
+
+BLUE:
+
+creatures:
+  - 2/2: 4
+  - 1/2: 2
+  - 4/4: 2
+  - 3/2: 2
+  - 1/3: 2
+  - 0/5: 2
+  - 4/6: 1
+  - 0/0: 1
+  - 1/1: 1
+  - 2/1: 1
+  - 1/3: 1
+  - 1/4: 1
+  - 2/3: 1
+  - 3/7: 1
+  - flying: 6
+  - sacrifice: 1
+  - wall: 1
+  - defender: 1
+enchant creature:
+  - Enchanted creature gets -6/-0.When enchanted creature blocks, destroy it. (The attacking
+  creature remains blocked.) (2b)
+  - As Metamorphic Alteration enters the battlefield, choose a creature. Enchanted creature is a
+  copy of the chosen creature. (1b)
+enchantment:
+  - You may cast spells from your hand without paying their mana costs.
+  - At the beginning of your upkeep, target opponent puts the top three cards of their library into
+  their graveyard, then you draw a card for each land card put into that graveyard this way. (3bb)
+  - Whenever you draw a card, each opponent puts the top two cards of their library into their
+  graveyard. (2b)
+instants:
+   - Enchanted creature gets +1/+0 and can't be blocked. (1b)
+   - Look at the top three cards of your library. Put one of them into your hand and the rest on the
+    bottom of your library in any order. (1b)
+  - Counter target creature spell.Draw a card. (2bb)
+  - Counter target spell. (1bb)
+  - Return target nonland permanent to its owner's hand.
+  - Counter target creature spell. (1b)
+  - Put target nonland permanent on top of its owner's library. (4b)
+  - Creatures your opponents control get -2/-0 until end of turn.Draw a card. (2b)
+sorcery:
+  - Draw two cards. (2b)
+  - Up to two target creatures can't be blocked this turn. (1b)
+  - Draw cards equal to the highest converted mana cost among artifacts you control. (3b)
+  - Draw three cards, then discard a card. (3b)
+  - Tap all creatures target player controls. Those creatures don't untap during that player's next
+  untap step. (2bb)
+  - Exchange control of two target creatures. (4b)
+
+
+BLACK:
+
+creatures:
+ - 2/2: 3
+ - 3/2: 2
+ - 6/5: 1
+ - 5/4: 1
+ - 2/1: 1
+ - 6/6: 1
+ - 1/1: 1
+ - 4/4: 1
+ - 1/3: 1
+ - sacrifice: 2
+ - flying: 2
+ - exile: 2
+ - resurrect: 2
+ - lifelink: 1
+ - deathtouch: 1
+ - trample: 1
+ - discard: 1
+ - flash: 1
+instants:
+ - Until end of turn, target creature gets +2/+0 and gains "When this creature dies, return it to
+  the battlefield tapped under its owner's control." (1b)
+sorcery:
+ - As an additional cost to cast this spell, sacrifice a creature.Draw three cards. (3b)
+ - Target opponent reveals their hand. You choose a noncreature, nonland card from it. That player
+ discards that card. (b)
+ - Each player loses half their life, then discards half the cards in their hand, then sacrifices
+ half the creatures they control. Round up each time. (3b)
