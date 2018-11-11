@@ -5,6 +5,19 @@
     <title>Index</title>
 </head>
 <body>
-foobar
+{% for card in cards %}
+    <p>
+        Card: {{ card.kind }} {% if card.is_creature %}
+            [{{ card.mana }}] {{ card.power }}/{{ card.toughness }}
+        {% endif %}
+        {% for ability in card.abilities.all %}
+            <br/>{{ ability.cost }}: {{ ability.benefit }}
+        {% empty %}
+            <br/>No abilities
+        {% endfor %}
+    </p>
+{% empty %}
+    <p>no cards</p>
+{% endfor %}
 </body>
 </html>
