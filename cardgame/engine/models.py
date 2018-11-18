@@ -1,34 +1,13 @@
+from random import shuffle
+
 from django.db import models
 
-from cards.models import CardCollection
-
-
-class Player(models.Model):
-    HEALTH_START = 20
-
-    health = models.IntegerField(default=HEALTH_START)
-    deck = models.ForeignKey(CardCollection, related_name='deck', on_delete=models.CASCADE)
-    hand = models.ForeignKey(CardCollection, related_name='hand', on_delete=models.CASCADE)
-    grave = models.ForeignKey(CardCollection, related_name='grave', on_delete=models.CASCADE)
-
-    def __init__(self, *args, **kwargs):
-        # check collections
-        for col in ['deck', 'hand', 'grave']:
-            if col not in kwargs:
-                cardcol = CardCollection()
-                cardcol.save()
-                kwargs[col] = cardcol
-        super().__init__(*args, **kwargs)
-
-    def draw(self, n):
-        for _ in range(n):
-            card = self.deck.cards.pop()
-            self.hand.cards.add(card)
-        self.save()
+from cards.models import Card, Ability
 
 
 class Game(models.Model):
     START_DRAW_NUMBER = 7
+
     STATUS_SETUP = 'setup'
     STATUS_BUSY = 'busy'
     STATUS_DONE = 'done'
@@ -37,32 +16,166 @@ class Game(models.Model):
         (STATUS_BUSY, 'Busy'),
         (STATUS_DONE, 'Done'),
     )
+    STATUS_ORDER = [
+        STATUS_SETUP, STATUS_BUSY, STATUS_DONE
+    ]
 
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_SETUP)
-    started_at = models.DateTimeField(auto_now_add=True)
-    turn = models.IntegerField(default=1)
-    players = models.ManyToManyField(Player)
+    PHASE_DRAW = 'draw'
+    PHASE_MAIN = 'main'
+    PHASE_COMBAT = 'combat'
+    PHASE_UPKEEP = 'upkeep'
+    PHASE_CHOICES = (
+        (PHASE_DRAW, 'Draw'),
+        (PHASE_MAIN, 'Main'),
+        (PHASE_COMBAT, 'Combat'),
+        (PHASE_UPKEEP, 'Upkeep'),
+    )
+    PHASE_ORDER = [
+        PHASE_DRAW, PHASE_COMBAT, PHASE_MAIN, PHASE_UPKEEP
+    ]
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_SETUP, null=False)
+    started_at = models.DateTimeField(auto_now_add=True, null=False)
+    turn = models.IntegerField(default=1, null=False)
+    round = models.IntegerField(default=1, null=False)
+    phase = models.CharField(max_length=20, choices=PHASE_CHOICES, default=PHASE_DRAW, null=False)
+    last_combat_actor = models.IntegerField(null=True)
 
     def __str__(self):
-        return 'id={} status={} turn={} started_at={}'.format(
-            self.pk, self.status, self.turn, self.started_at)
+        return 'id={} status={} round={} turn={} phase={} started_at={}'.format(
+            self.pk, self.status, self.round, self.turn, self.phase, self.started_at)
 
     def is_status(self, value):
         return self.status == value
 
-    # def draw(self, p, n):
-    #     for _ in range(n):
-    #         card = self.
+
+class Player(models.Model):
+    HEALTH_START = 20
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, null=False)
+    health = models.IntegerField(default=HEALTH_START)
+    pool = models.IntegerField(default=0, null=False)
+
+    # class Meta:
+    #     unique('game', 'num')
+
+    def deck(self):
+        return self.gamecard_set.filter(slot=GameCard.SLOT_DECK).all()
+
+    def deck_size(self):
+        return self.gamecard_set.filter(slot=GameCard.SLOT_DECK).count()
+
+    def hand(self):
+        return self.gamecard_set.filter(slot=GameCard.SLOT_HAND).all()
+
+    def hand_size(self):
+        return self.gamecard_set.filter(slot=GameCard.SLOT_HAND).count()
+
+    def table(self):
+        return self.gamecard_set.filter(slot=GameCard.SLOT_TABLE).all()
+
+    def table_size(self):
+        return self.gamecard_set.filter(slot=GameCard.SLOT_TABLE).count()
+
+    def grave(self):
+        return self.gamecard_set.filter(slot=GameCard.SLOT_GRAVE).all()
+
+    def grave_size(self):
+        return self.gamecard_set.filter(slot=GameCard.SLOT_GRAVE).count()
+
+    def available_mana(self):
+        on_table = self.gamecard_set.filter(
+            slot=GameCard.SLOT_TABLE).filter(
+            tapped=False).filter(
+            card__kind=Card.KIND_LAND).count()
+        return self.pool + on_table
+
+    def get_any_untapped_land(self):
+        return self.gamecard_set.filter(
+            slot=GameCard.SLOT_TABLE).filter(
+            tapped=False).filter(
+            card__kind=Card.KIND_LAND).get()
 
 
+class DeckCardGameManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(slot=GameCard.SLOT_DECK)
 
 
+class GameCard(models.Model):
+    SLOT_DECK = 'deck'
+    SLOT_HAND = 'hand'
+    SLOT_GRAVE = 'grave'
+    SLOT_TABLE = 'table'
+    SLOT_CHOICES = (
+        (SLOT_DECK, 'Deck'),
+        (SLOT_HAND, 'Hand'),
+        (SLOT_GRAVE, 'Graveyard'),
+        (SLOT_TABLE, 'Table'),
+    )
+
+    deck = DeckCardGameManager()
+
+    player = models.ForeignKey(Player, on_delete=models.CASCADE)
+    card = models.ForeignKey(Card, on_delete=models.CASCADE)
+    pos = models.IntegerField(null=False)
+    slot = models.CharField(max_length=10, choices=SLOT_CHOICES, null=False)
+    tapped = models.BooleanField(default=False, null=False)
+
+    class Meta:
+        ordering = ['pos']
+
+    def is_affordable(self):
+        cost = self.card.mana
+        if not cost:
+            return True
+        available = self.player.available_mana()
+        if available >= cost:
+            return True
+        return False
 
 
+class Event(models.Model):
+    CMD_STATUS = 'status'
+    CMD_SHUFFLE = 'shuffle'
+    CMD_DRAW = 'draw'
+    CMD_PHASE = 'phase'
+    CMD_PLAY = 'play'
+    CMD_COST = 'cost'
+    CMD_BENEFIT = 'benefit'
+    CMD_CHOICES = (
+        (CMD_STATUS, 'Status'),
+        (CMD_DRAW, 'Draw'),
+        (CMD_SHUFFLE, 'Shuffle'),
+        (CMD_PHASE, 'Phase'),
+        (CMD_PLAY, 'Play'),
+        (CMD_COST, 'Cost'),
+        (CMD_BENEFIT, 'Benefit'),
+    )
 
-
-
-
+    # game data
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, null=False)
+    status = models.CharField(max_length=20, choices=Game.STATUS_CHOICES, null=False)
+    turn = models.IntegerField(null=False)
+    round = models.IntegerField(null=False)
+    phase = models.CharField(max_length=20, choices=Game.PHASE_CHOICES, null=False)
+    # player data
+    health1 = models.IntegerField(null=False)
+    health2 = models.IntegerField(null=False)
+    deck1_size = models.IntegerField(null=False)
+    deck2_size = models.IntegerField(null=False)
+    hand1_size = models.IntegerField(null=False)
+    hand2_size = models.IntegerField(null=False)
+    grave1_size = models.IntegerField(null=False)
+    grave2_size = models.IntegerField(null=False)
+    # event data
+    occurred_at = models.DateTimeField(auto_now_add=True, null=False)
+    actor = models.ForeignKey(Player, on_delete=models.CASCADE, null=False)
+    command = models.CharField(max_length=250, choices=CMD_CHOICES, null=False)
+    gcard = models.ForeignKey(GameCard, on_delete=models.CASCADE, null=True)
+    ability = models.ForeignKey(Ability, on_delete=models.CASCADE, null=True)
+    error = models.BooleanField(default=False, null=False)
+    comment = models.CharField(max_length=250, null=True)
 
 
 
