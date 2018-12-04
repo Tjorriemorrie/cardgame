@@ -15,28 +15,32 @@ class Ability(models.Model):
 
 
 class Card(models.Model):
-    KIND_LAND = 'l'
-    KIND_CREATURE = 'c'
+    KIND_PERSON = 'person'  # land
+    KIND_OPINION = 'opinion'  # creature
+    KIND_PAPER = 'paper'  # enchantment
+    KIND_EVIDENCE = 'evidence'  # enchant creature
     KIND_CHOICES = (
-        (KIND_LAND, 'Land'),
-        (KIND_CREATURE, 'Creature'),
+        (KIND_PERSON, 'Person'),
+        (KIND_OPINION, 'Opinion'),
+        (KIND_PAPER, 'Paper'),
+        (KIND_EVIDENCE, 'Evidence'),
     )
 
     # all
-    kind = models.CharField(max_length=1, choices=KIND_CHOICES, null=False)
-    mana = models.IntegerField(null=False)
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES, null=False)
+    support = models.IntegerField(null=False)
     abilities = models.ManyToManyField(Ability)
 
     # creature only
     power = models.IntegerField(null=True)
-    toughness = models.IntegerField(null=True)
+    endurance = models.IntegerField(null=True)
 
     def __str__(self):
-        return '[{}] {}/{}'.format(self.mana, self.power, self.toughness)
+        return '[{}] {}/{}'.format(self.support, self.power, self.endurance)
 
-    def is_land(self):
-        return self.kind == self.KIND_LAND
+    def is_person(self):
+        return self.kind == self.KIND_PERSON
 
-    def is_creature(self):
-        return self.kind == self.KIND_CREATURE
+    def is_story(self):
+        return self.kind == self.KIND_STORY
 

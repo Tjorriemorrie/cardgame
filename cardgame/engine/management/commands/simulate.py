@@ -34,11 +34,11 @@ class Command(BaseCommand):
 
         self.stdout.write('Creating engine...')
         engine = Engine(game)
-        while not engine.is_finished():
-            if engine.is_setup():
+        while not engine.is_status_finished():
+            if engine.is_status_setup():
                 self.stdout.write('Setting up game...')
                 engine.setup_game()
-            bot = Bot(game)
+            bot = Bot(engine)
             bot.analyze()
             break
 

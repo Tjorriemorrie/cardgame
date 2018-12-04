@@ -22,16 +22,16 @@ class Game(models.Model):
 
     PHASE_DRAW = 'draw'
     PHASE_MAIN = 'main'
-    PHASE_COMBAT = 'combat'
+    PHASE_DEBATE = 'debate'
     PHASE_UPKEEP = 'upkeep'
     PHASE_CHOICES = (
         (PHASE_DRAW, 'Draw'),
         (PHASE_MAIN, 'Main'),
-        (PHASE_COMBAT, 'Combat'),
+        (PHASE_DEBATE, 'Debate'),
         (PHASE_UPKEEP, 'Upkeep'),
     )
     PHASE_ORDER = [
-        PHASE_DRAW, PHASE_COMBAT, PHASE_MAIN, PHASE_UPKEEP
+        PHASE_DRAW, PHASE_MAIN, PHASE_DEBATE, PHASE_UPKEEP
     ]
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_SETUP, null=False)
@@ -45,16 +45,14 @@ class Game(models.Model):
         return 'id={} status={} round={} turn={} phase={} started_at={}'.format(
             self.pk, self.status, self.round, self.turn, self.phase, self.started_at)
 
-    def is_status(self, value):
-        return self.status == value
-
 
 class Player(models.Model):
-    HEALTH_START = 20
+    BELIEVE_START = 20
 
     game = models.ForeignKey(Game, on_delete=models.CASCADE, null=False)
-    health = models.IntegerField(default=HEALTH_START)
-    pool = models.IntegerField(default=0, null=False)
+    belief = models.IntegerField(default=BELIEVE_START)
+    crowd = models.IntegerField(default=0, null=False)
+    last_turn_person = models.IntegerField(default=0, null=False)
 
     # class Meta:
     #     unique('game', 'num')
@@ -77,24 +75,18 @@ class Player(models.Model):
     def table_size(self):
         return self.gamecard_set.filter(slot=GameCard.SLOT_TABLE).count()
 
-    def grave(self):
-        return self.gamecard_set.filter(slot=GameCard.SLOT_GRAVE).all()
-
-    def grave_size(self):
-        return self.gamecard_set.filter(slot=GameCard.SLOT_GRAVE).count()
-
-    def available_mana(self):
+    def available_support(self):
         on_table = self.gamecard_set.filter(
             slot=GameCard.SLOT_TABLE).filter(
             tapped=False).filter(
-            card__kind=Card.KIND_LAND).count()
-        return self.pool + on_table
+            card__kind=Card.KIND_PERSON).count()
+        return self.crowd + on_table
 
-    def get_any_untapped_land(self):
+    def get_any_untapped_persons(self):
         return self.gamecard_set.filter(
             slot=GameCard.SLOT_TABLE).filter(
             tapped=False).filter(
-            card__kind=Card.KIND_LAND).get()
+            card__kind=Card.KIND_PERSON).get()
 
 
 class DeckCardGameManager(models.Manager):
@@ -105,12 +97,10 @@ class DeckCardGameManager(models.Manager):
 class GameCard(models.Model):
     SLOT_DECK = 'deck'
     SLOT_HAND = 'hand'
-    SLOT_GRAVE = 'grave'
     SLOT_TABLE = 'table'
     SLOT_CHOICES = (
         (SLOT_DECK, 'Deck'),
         (SLOT_HAND, 'Hand'),
-        (SLOT_GRAVE, 'Graveyard'),
         (SLOT_TABLE, 'Table'),
     )
 
@@ -126,10 +116,10 @@ class GameCard(models.Model):
         ordering = ['pos']
 
     def is_affordable(self):
-        cost = self.card.mana
+        cost = self.card.support
         if not cost:
             return True
-        available = self.player.available_mana()
+        available = self.player.available_support()
         if available >= cost:
             return True
         return False
