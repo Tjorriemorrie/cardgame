@@ -69,11 +69,20 @@ class GameAdaptor:
     def is_status_setup(self):
         return self.data['status'] == Game.STATUS_SETUP
 
-    def is_phase_combat(self):
-        return self.data['phase'] == Game.PHASE_DEBATE
+    def is_phase_draw(self):
+        return self.data['phase'] == Game.PHASE_DRAW
 
     def is_phase_main(self):
         return self.data['phase'] == Game.PHASE_MAIN
+
+    def is_phase_debate(self):
+        return self.data['phase'] == Game.PHASE_DEBATE
+
+    def is_action_phase(self):
+        return self.data['phase'] in [Game.PHASE_MAIN, Game.PHASE_DEBATE]
+
+    def is_phase_upkeep(self):
+        return self.data['phase'] == Game.PHASE_UPKEEP
 
     def is_status_finished(self):
         return self.data['status'] == Game.STATUS_DONE
@@ -110,11 +119,25 @@ class GameAdaptor:
 
 
 class Move:
+    TYPE_PASS = 'pass'
     TYPE_PERSON = 'person'
+    TYPE_DRAW = 'draw'
 
-    def __init__(self, type_, gcard):
+    def __init__(self, type_, gcard=None):
         self.type_ = type_
         self.gcard = gcard
+
+    def __repr__(self):
+        return '{}({})'.format(self.__class__.__name__, self.type_)
+
+    def is_type_pass(self):
+        return self.type_ == self.TYPE_PASS
+
+    def is_type_person(self):
+        return self.type_ == self.TYPE_PERSON
+
+    def is_type_draw(self):
+        return self.type_ == self.TYPE_DRAW
 
 
 class Engine(GameAdaptor):
@@ -123,11 +146,12 @@ class Engine(GameAdaptor):
         if isinstance(game_or_data, Game):
             self._game = game_or_data
             self.to_dict(game_or_data)
-            self.mc = False
         else:
             self._game = None
             self.data = deepcopy(game_or_data)
-            self.mc = True
+
+    def __repr__(self):
+        return '{}(_game={})'.format(self.__class__.__name__, bool(self.__game))
 
     def setup_game(self):
         for player in self.data['players']:
@@ -169,8 +193,9 @@ class Engine(GameAdaptor):
             new_phase = Game.PHASE_ORDER[i + 1]
         except IndexError:
             new_phase = Game.PHASE_ORDER[0]
+            # round increases only after player 2 finished
+            self.data['round'] += 1 if self.data['turn'] == 2 else 0
             self.data['turn'] = 2 if self.data['turn'] == 1 else 1
-            self.data['round'] += 1
         self.data['phase'] = new_phase
         self.save_game()
         self.log(self.get_player(True)['pk'], Event.CMD_PHASE)
@@ -181,10 +206,11 @@ class Engine(GameAdaptor):
             self.next_phase()
 
     def get_available_moves(self):
+        """get moves but for new moves the action has to have been taken on the engine copy"""
         moves = []
 
         # for phase
-        if self.is_phase_combat():
+        if self.is_phase_debate():
             opinions = self.get_table_opinions(untapped=True)
             if opinions:
                 raise Exception('todo')
@@ -200,16 +226,30 @@ class Engine(GameAdaptor):
                     return moves
             # otherwise look at all other cards to play
             raise Exception('todo')
+
+        elif self.is_phase_draw():
+            moves.append(Move(Move.TYPE_DRAW))
+
+        elif self.is_phase_upkeep():
+            # not doing anything till such logic is required
+            pass
         else:
             raise Exception('what phase?')
+
         return moves
 
-    def play_land(self, player, gcard):
-        table_size = player.table_size()
-        gcard.slot = GameCard.SLOT_TABLE
-        gcard.pos = table_size
-        gcard.save()
+    def play_pass(self):
+        self.next_phase()
+        self.log(self.get_player(), Event.CMD_PASS)
+
+    def play_person(self, gcard):
+        player = self.get_player()
+        table_size = len(player['table'])
+        gcard['slot'] = GameCard.SLOT_TABLE
+        gcard['pos'] = table_size
+        self.save_gcard(gcard)
         self.log(player, Event.CMD_PLAY, gcard)
+        # no next phase, can still play opinions
             
     def play_creature(self, player, gcard):
         # todo handle spells
@@ -245,18 +285,12 @@ class Engine(GameAdaptor):
             raise Exception('unknown benefit {}'.format(ability.benefit))
 
     def save_game(self):
-        if self.mc:
-            return
         super().save_game()
 
     def save_gcard(self, gcard):
-        if self.mc:
-            return
         super().save_gcard(gcard)
 
     def log(self, actor_pk, cmd, gcard_pk=None, error=False, comment=None):
-        if self.mc:
-            return
         Event.objects.create(
             game__id=self.data['pk'], status=self.data['status'],
             turn=self.data['turn'], round=self.data['round'], phase=self.data['phase'],
@@ -268,11 +302,23 @@ class Engine(GameAdaptor):
         )
 
 
+class MonteCarloEngine(Engine):
+
+    def save_game(self, *args, **kwargs):
+        return
+
+    def save_gcard(self, *args, **kwargs):
+        return
+
+    def log(self, *args, **kwargs):
+        return
+
+
 class Bot:
 
     def __init__(self, engine):
         self.tree = Tree()
-        self.tree.create_node('root', 'root', data={'e': engine.data})
+        self.tree.create_node('root', 'root', data={'edata': engine.data, 'game_over': False})
 
     def analyze(self):
         best_eval = self.minimax(self.tree['root'], 5, -float('inf'), float('inf'), True)
@@ -284,39 +330,101 @@ class Bot:
     def _get_static_eval(self):
         raise Exception('todo')
 
-    def _add_children(self, parent, maximizing_player):
-        # default - do nothing
-        e = Engine(parent.data['e'])
-        nodes = [
-            self.tree.create_node(parent=parent, data={'e': e.data, 'actions': []})
-        ]
+    def _create_node_from_moves(self, parent, moves):
+        e = MonteCarloEngine(parent.data['edata'])
+        turn_at_start = e.data['turn']
+        for move in moves:
+
+            if move.is_type_pass():
+                if len(moves) != 1:
+                    raise Exception('should only be one move')
+                # handle separately
+                e.play_pass()
+                # next phase included in play_pass
+                node = self.tree.create_node(parent=parent, data={'edata': e.data, 'moves': [move], 'game_over': False,
+                                                                  'same_player': e.data['turn'] == turn_at_start})
+                return node
+
+            elif move.is_type_person():
+                if len(moves) != 1:
+                    raise Exception('should only be one move')
+                # handle separately
+                e.play_person(move.gcard)
+                # no next_phase here, only after opinions were played
+                node = self.tree.create_node(parent=parent, data={'edata': e.data, 'moves': [move], 'game_over': False,
+                                                                  'same_player': e.data['turn'] == turn_at_start})
+                return node
+
+            elif move.is_type_draw():
+                if len(moves) != 1:
+                    raise Exception('should only be one move')
+                e.draw(e.get_player(), 1)
+                e.next_phase()
+                node = self.tree.create_node(parent=parent, data={'edata': e.data, 'moves': [move], 'game_over': False,
+                                                                  'same_player': e.data['turn'] == turn_at_start})
+                return node
+
+            else:
+                raise Exception('what type_ {}?'.format(move.type_))
+        raise Exception('expected moves...')
+
+    def _add_children(self, parent):
+        e = MonteCarloEngine(parent.data['edata'])
+        nodes = []
+
+        # pass
+        if e.is_action_phase():
+            pass_move = Move(Move.TYPE_PASS)
+            node = self._create_node_from_moves(parent, [pass_move])
+            nodes.append(node)
+
         # get all moves
         moves = e.get_available_moves()
-        0/0
+        if not moves:
+            return nodes
+
         # make all possible combinations
+
+        # persons
+        # add each person as a node, no combinations
+        if moves[0].is_type_person():
+            for move in moves:
+                node = self._create_node_from_moves(parent, [move])
+                nodes.append(node)
+
+        # draw
+        # there can only be 1 draw for active player
+        elif moves[0].is_type_draw():
+            node = self._create_node_from_moves(parent, moves)
+            nodes.append(node)
+
+        else:
+            raise Exception('todo move type')
         return nodes
 
     def minimax(self, position, depth, alpha, beta, maximizing_player):
-        data = position.data
-        if not depth or data.get('game_over'):
+        pdata = position.data
+        if depth <= 0 or pdata.get('game_over'):
             return self._get_static_eval()
 
-        children = self._add_children(position, maximizing_player)
+        children = self._add_children(position)
 
-        if maximizing_player:
-            max_eval = -float('inf')
-            for child in children:
-                eval = self.minimax(child, depth - 1, alpha, beta, False)
+        for child in children:
+            cdata = child.data
+            same_player = maximizing_player if cdata['same_player'] else not maximizing_player
+
+            if maximizing_player:
+                max_eval = -float('inf')
+                eval = self.minimax(child, depth - 1, alpha, beta, same_player)
                 max_eval = max(max_eval, eval)
                 alpha = max(alpha, eval)
                 if beta <= alpha:
                     break
-            return max_eval
+                return max_eval
 
-        else:
-            min_eval = float('inf')
-            for child in children:
-                eval = self.minimax(child, depth - 1, alpha, beta, True)
+            else:
+                min_eval = float('inf')
+                eval = self.minimax(child, depth - 1, alpha, beta, same_player)
                 min_eval = min(min_eval, eval)
                 beta = min(beta, eval)
                 if beta <= alpha:

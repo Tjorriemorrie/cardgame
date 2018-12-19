@@ -104,7 +104,7 @@ class GameCard(models.Model):
         (SLOT_TABLE, 'Table'),
     )
 
-    deck = DeckCardGameManager()
+    # deck = DeckCardGameManager()
 
     player = models.ForeignKey(Player, on_delete=models.CASCADE)
     card = models.ForeignKey(Card, on_delete=models.CASCADE)
@@ -130,6 +130,7 @@ class Event(models.Model):
     CMD_SHUFFLE = 'shuffle'
     CMD_DRAW = 'draw'
     CMD_PHASE = 'phase'
+    CMD_PASS = 'pass'
     CMD_PLAY = 'play'
     CMD_COST = 'cost'
     CMD_BENEFIT = 'benefit'
