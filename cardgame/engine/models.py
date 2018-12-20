@@ -98,10 +98,12 @@ class GameCard(models.Model):
     SLOT_DECK = 'deck'
     SLOT_HAND = 'hand'
     SLOT_TABLE = 'table'
+    SLOT_GRAVE = 'grave'
     SLOT_CHOICES = (
         (SLOT_DECK, 'Deck'),
         (SLOT_HAND, 'Hand'),
         (SLOT_TABLE, 'Table'),
+        (SLOT_GRAVE, 'Graveyard'),
     )
 
     # deck = DeckCardGameManager()
@@ -109,7 +111,7 @@ class GameCard(models.Model):
     player = models.ForeignKey(Player, on_delete=models.CASCADE)
     card = models.ForeignKey(Card, on_delete=models.CASCADE)
     pos = models.IntegerField(null=False)
-    slot = models.CharField(max_length=10, choices=SLOT_CHOICES, null=False)
+    slot = models.CharField(max_length=10, choices=SLOT_CHOICES, null=False, blank=False)
     tapped = models.BooleanField(default=False, null=False)
 
     class Meta:

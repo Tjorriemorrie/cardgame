@@ -1,10 +1,8 @@
 from django.core.management import BaseCommand
 
-from django.core.management import BaseCommand
-
 from cards.models import Card
 from engine.models import Game
-from engine.services import create_random_game, Engine, Bot
+from engine.services import Bot, Engine, create_random_game
 
 
 class Command(BaseCommand):
@@ -21,12 +19,12 @@ class Command(BaseCommand):
             game = Game.objects.exclude(status=Game.STATUS_DONE).get()
             self.stdout.write('Existing unfinished game found')
         except Game.DoesNotExist:
-            self.stdout.write('Fetching lands...')
-            lands = Card.objects.filter(kind='l').all()
-            self.stdout.write('Fetching creatures...')
-            creatures = Card.objects.filter(kind='c').all()
+            self.stdout.write('Fetching persons...')
+            persons = Card.objects.filter(kind=Card.KIND_PERSON).all()
+            self.stdout.write('Fetching opinions...')
+            opinions = Card.objects.filter(kind=Card.KIND_OPINION).all()
             self.stdout.write('Creating new game...', ending='')
-            game = create_random_game(lands, creatures)
+            game = create_random_game(persons, opinions)
             self.stdout.write('done')
         except Game.MultipleObjectsReturned:
             game = Game.objects.exclude(status=Game.STATUS_DONE).first()

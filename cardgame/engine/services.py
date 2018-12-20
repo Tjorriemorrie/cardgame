@@ -28,6 +28,7 @@ class GameAdaptor:
                 'deck': [],
                 'hand': [],
                 'table': [],
+                'grave': [],
             }
             for gcard in player.gamecard_set.all():
                 card = {
@@ -57,9 +58,9 @@ class GameAdaptor:
 
     def save_gcard(self, gcard_data):
         gcard = GameCard.objects.get(pk=gcard_data['pk'])
-        gcard.pos = gcard['pos']
-        gcard.slot = gcard['slot']
-        gcard.tapped = gcard['tapped']
+        gcard.pos = gcard_data['pos']
+        gcard.slot = gcard_data['slot']
+        gcard.tapped = gcard_data['tapped']
         gcard.save()
 
     ##############################
@@ -170,7 +171,7 @@ class Engine(GameAdaptor):
         self.log(player['pk'], Event.CMD_SHUFFLE)
 
     def draw(self, player, qty):
-        # top card has lowest pos, as first card on deck to draw
+        # top card located at end of list, as first card on deck to draw
         hand_size = len(player['hand'])
         for i in range(qty):
             gcard = player['deck'].pop()
@@ -178,7 +179,7 @@ class Engine(GameAdaptor):
             gcard['pos'] = hand_size + i
             player['hand'].append(gcard)
             self.save_gcard(gcard)
-            self.log(player['pk'], Event.CMD_DRAW, gcard)
+            self.log(player['pk'], Event.CMD_DRAW, gcard['pk'])
 
     def next_status(self):
         i = Game.STATUS_ORDER.index(self.data['status'])
@@ -198,7 +199,7 @@ class Engine(GameAdaptor):
             self.data['turn'] = 2 if self.data['turn'] == 1 else 1
         self.data['phase'] = new_phase
         self.save_game()
-        self.log(self.get_player(True)['pk'], Event.CMD_PHASE)
+        self.log(self.get_player()['pk'], Event.CMD_PHASE)
 
         # auto continue phase if no moves available
         moves = self.get_available_moves()
@@ -243,12 +244,14 @@ class Engine(GameAdaptor):
         self.log(self.get_player(), Event.CMD_PASS)
 
     def play_person(self, gcard):
+        # move from hand to table
         player = self.get_player()
         table_size = len(player['table'])
         gcard['slot'] = GameCard.SLOT_TABLE
         gcard['pos'] = table_size
         self.save_gcard(gcard)
         self.log(player, Event.CMD_PLAY, gcard)
+        index =
         # no next phase, can still play opinions
             
     def play_creature(self, player, gcard):
@@ -292,13 +295,13 @@ class Engine(GameAdaptor):
 
     def log(self, actor_pk, cmd, gcard_pk=None, error=False, comment=None):
         Event.objects.create(
-            game__id=self.data['pk'], status=self.data['status'],
+                game_id=self.data['pk'], status=self.data['status'],
             turn=self.data['turn'], round=self.data['round'], phase=self.data['phase'],
             health1=self.data['players'][0]['health'], deck1_size=len(self.data['players'][0]['deck']), 
-            hand1_size=len(self.data['players'][0]['hand']), grave1_size=len(self.data['players'][0]['size']), 
+            hand1_size=len(self.data['players'][0]['hand']), grave1_size=len(self.data['players'][0]['grave']),
             health2=self.data['players'][1]['health'], deck2_size=len(self.data['players'][1]['deck']), 
-            hand2_size=len(self.data['players'][1]['hand']), grave2_size=len(self.data['players'][1]['size']), 
-            actor__id=actor_pk, cmd=cmd, gcard__id=gcard_pk, error=error, comment=comment
+            hand2_size=len(self.data['players'][1]['hand']), grave2_size=len(self.data['players'][1]['grave']),
+            actor_id=actor_pk, command=cmd, gcard_id=gcard_pk, error=error, comment=comment
         )
 
 
@@ -318,17 +321,35 @@ class Bot:
 
     def __init__(self, engine):
         self.tree = Tree()
-        self.tree.create_node('root', 'root', data={'edata': engine.data, 'game_over': False})
+        self.tree.create_node('root', 'root', data={'edata': engine.data, 'game_over': False,
+                                                    'moves': []})
 
     def analyze(self):
-        best_eval = self.minimax(self.tree['root'], 5, -float('inf'), float('inf'), True)
+        depth = 1
+        root = self.tree['root']
+        is_player_1 = root.data['edata']['turn'] == 1
+        best_eval = self.minimax(root, depth, is_player_1)
         return best_eval, self._get_best_move()
 
     def _get_best_move(self):
         raise Exception('todo')
 
-    def _get_static_eval(self):
-        raise Exception('todo')
+    def _get_static_eval(self, final_position):
+        value = 0
+        data = final_position.data
+
+        # add health
+        p1_health = data['edata']['players'][0]['health']
+        p2_health = data['edata']['players'][1]['health']
+        value += p1_health - p2_health
+
+        # adjust eval perspective (requires prev pos to determine if maximizing player)
+        # e.g if maximizing player is p2, then flip eval
+        parent = self.tree[final_position.bpointer]
+        flip_value = 1 if parent.data['edata']['turn'] == 1 else -1
+        value *= flip_value
+
+        return value
 
     def _create_node_from_moves(self, parent, moves):
         e = MonteCarloEngine(parent.data['edata'])
@@ -341,8 +362,9 @@ class Bot:
                 # handle separately
                 e.play_pass()
                 # next phase included in play_pass
+                same_player = e.data['turn'] == turn_at_start
                 node = self.tree.create_node(parent=parent, data={'edata': e.data, 'moves': [move], 'game_over': False,
-                                                                  'same_player': e.data['turn'] == turn_at_start})
+                                                                  'same_player': same_player})
                 return node
 
             elif move.is_type_person():
@@ -351,8 +373,9 @@ class Bot:
                 # handle separately
                 e.play_person(move.gcard)
                 # no next_phase here, only after opinions were played
+                same_player = e.data['turn'] == turn_at_start
                 node = self.tree.create_node(parent=parent, data={'edata': e.data, 'moves': [move], 'game_over': False,
-                                                                  'same_player': e.data['turn'] == turn_at_start})
+                                                                  'same_player': same_player})
                 return node
 
             elif move.is_type_draw():
@@ -360,8 +383,10 @@ class Bot:
                     raise Exception('should only be one move')
                 e.draw(e.get_player(), 1)
                 e.next_phase()
+                # can be next player if unable to play any hand card, and nothing on table
+                same_player = e.data['turn'] == turn_at_start
                 node = self.tree.create_node(parent=parent, data={'edata': e.data, 'moves': [move], 'game_over': False,
-                                                                  'same_player': e.data['turn'] == turn_at_start})
+                                                                  'same_player': same_player})
                 return node
 
             else:
@@ -402,34 +427,46 @@ class Bot:
             raise Exception('todo move type')
         return nodes
 
-    def minimax(self, position, depth, alpha, beta, maximizing_player):
+    def minimax(self, position, depth, is_player_1):
         pdata = position.data
+        pmoves = pdata['moves']
         if depth <= 0 or pdata.get('game_over'):
-            return self._get_static_eval()
+            return self._get_static_eval(position)
+
+        pround = pdata['edata']['round']
+        pturn = pdata['edata']['turn']
+        pphase = pdata['edata']['phase']
 
         children = self._add_children(position)
 
-        for child in children:
-            cdata = child.data
-            same_player = maximizing_player if cdata['same_player'] else not maximizing_player
+        if is_player_1:
+            value = -float('inf')
+            for child in children:
+                cdata = child.data
+                cmoves = cdata['moves']
 
-            if maximizing_player:
-                max_eval = -float('inf')
-                eval = self.minimax(child, depth - 1, alpha, beta, same_player)
-                max_eval = max(max_eval, eval)
-                alpha = max(alpha, eval)
-                if beta <= alpha:
-                    break
-                return max_eval
+                cround = cdata['edata']['round']
+                cturn = cdata['edata']['turn']
+                cphase = cdata['edata']['phase']
+                next_is_player_1 = is_player_1 if cdata['same_player'] else not is_player_1
 
-            else:
-                min_eval = float('inf')
-                eval = self.minimax(child, depth - 1, alpha, beta, same_player)
-                min_eval = min(min_eval, eval)
-                beta = min(beta, eval)
-                if beta <= alpha:
-                    break
-                return min_eval
+                pos_value = self.minimax(child, depth - 1, next_is_player_1)
+                value = max(value, pos_value)
+
+        else:  # player 2
+            value = float('inf')
+            for child in children:
+                cdata = child.data
+                cmoves = cdata['moves']
+
+                cround = cdata['edata']['round']
+                cturn = cdata['edata']['turn']
+                cphase = cdata['edata']['phase']
+                next_is_player_1 = is_player_1 if cdata['same_player'] else not is_player_1
+                pos_value = self.minimax(child, depth - 1, next_is_player_1)
+                value = min(value, pos_value)
+
+        return value
 
     def play(self):
         func = getattr(self, 'play_{}'.format(self.engine.game.phase))
@@ -479,50 +516,34 @@ class Bot:
 #             return minEval
 
 
-def create_random_deck(player, lands, creatures):
-    # add 20 lands
-    n = 20
-    for l in range(n):
-        random_land = choice(lands)
-        GameCard.objects.create(player=player, card=random_land, pos=(l + 1))
+def create_random_deck(player, persons, opinions):
+    # add 20 persons
+    for p in range(20):
+        random_person = choice(persons)
+        GameCard.objects.create(player=player, card=random_person, pos=(p + 1),
+                                slot=GameCard.SLOT_DECK)
 
-    # add 10 creatures x4
-    for c in range(10):
-        random_creature = choice(creatures)
-        for i in range(4):
-            n += 1
-            GameCard.objects.create(player=player, card=random_creature, pos=n)
+    # add 40 opinions
+    for o in range(40):
+        random_opinion = choice(opinions)
+        n = 20 + o
+        GameCard.objects.create(player=player, card=random_opinion, pos=n,
+                                slot=GameCard.SLOT_DECK)
 
     return player.gamecard_set.all()
 
 
-def create_random_game(lands, creatures):
+def create_random_game(persons, opinions):
     # game
     game = Game.objects.create()
     # players
     player1 = game.player_set.create()
     player2 = game.player_set.create()
     # decks
-    deck1 = create_random_deck(player1, lands, creatures)
-    deck2 = create_random_deck(player2, lands, creatures)
+    deck1 = create_random_deck(player1, persons, opinions)
+    deck2 = create_random_deck(player2, persons, opinions)
     # done
     return game
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
