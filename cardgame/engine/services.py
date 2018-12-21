@@ -25,10 +25,10 @@ class GameAdaptor:
                 'health': player.belief,
                 'pool': player.crowd,
                 'last_turn_person': player.last_turn_person,
-                'deck': [],
-                'hand': [],
-                'table': [],
-                'grave': [],
+                'deck': {},
+                'hand': {},
+                'table': {},
+                'grave': {},
             }
             for gcard in player.gamecard_set.all():
                 card = {
@@ -45,7 +45,7 @@ class GameAdaptor:
                     'slot': gcard.slot,
                     'tapped': gcard.tapped,
                 }
-                player_item[gcard.slot].append(gcard_item)
+                player_item[gcard.slot][gcard.pk] = gcard_item
             self.data['players'].append(player_item)
 
     def save_game(self):
@@ -104,7 +104,7 @@ class GameAdaptor:
 
     def get_hand_persons(self, active=True):
         player = self.get_player(active)
-        persons = [gc for gc in player['hand'] if gc['card']['kind'] == Card.KIND_PERSON]
+        persons = [gc for gc in player['hand'].values() if gc['card']['kind'] == Card.KIND_PERSON]
         return persons
 
     def get_table_opinions(self, active=True, untapped=False):
@@ -162,22 +162,26 @@ class Engine(GameAdaptor):
         self.next_phase()
 
     def shuffle_deck(self, player):
-        gcards = player['deck']
-        new_positions = list(range(len(gcards)))
-        shuffle(new_positions)
-        for new_pos, gcard in zip(new_positions, gcards):
-            gcard['pos'] = new_pos + 1
+        # randomizes the deck dictionary
+        gcards = list(player['deck'].values())
+        shuffle(gcards)
+        player['deck'] = {}
+        for i, gcard in enumerate(gcards):
+            gcard['pos'] = i + 1
             self.save_gcard(gcard)
+            player['deck'][gcard['pk']] = gcard
         self.log(player['pk'], Event.CMD_SHUFFLE)
 
     def draw(self, player, qty):
         # top card located at end of list, as first card on deck to draw
+        # move from deck to hand
         hand_size = len(player['hand'])
         for i in range(qty):
-            gcard = player['deck'].pop()
+            gcard = list(player['deck'].values()).pop()  # <-- handle if empty!
             gcard['slot'] = GameCard.SLOT_HAND
             gcard['pos'] = hand_size + i
-            player['hand'].append(gcard)
+            del player['deck'][gcard['pk']]
+            player['hand'][gcard['pk']] = gcard
             self.save_gcard(gcard)
             self.log(player['pk'], Event.CMD_DRAW, gcard['pk'])
 
@@ -249,9 +253,10 @@ class Engine(GameAdaptor):
         table_size = len(player['table'])
         gcard['slot'] = GameCard.SLOT_TABLE
         gcard['pos'] = table_size
+        del player['hand'][gcard['pk']]
+        player['table'][gcard['pk']] = gcard
         self.save_gcard(gcard)
         self.log(player, Event.CMD_PLAY, gcard)
-        index =
         # no next phase, can still play opinions
             
     def play_creature(self, player, gcard):
@@ -290,8 +295,8 @@ class Engine(GameAdaptor):
     def save_game(self):
         super().save_game()
 
-    def save_gcard(self, gcard):
-        super().save_gcard(gcard)
+    def save_gcard(self, gcard_data):
+        super().save_gcard(gcard_data)
 
     def log(self, actor_pk, cmd, gcard_pk=None, error=False, comment=None):
         Event.objects.create(
@@ -329,19 +334,44 @@ class Bot:
         root = self.tree['root']
         is_player_1 = root.data['edata']['turn'] == 1
         best_eval = self.minimax(root, depth, is_player_1)
-        return best_eval, self._get_best_move()
+        return best_eval, self._get_best_moves()
 
-    def _get_best_move(self):
-        raise Exception('todo')
+    def _get_best_moves(self):
+        best_moves = None
+        max_value = float('-inf')
+        root = self.tree['root']
+        for child_id in root.fpointer:
+            child = self.tree[child_id]
+            value = child.data['value']
+            if value > max_value:
+                max_value = value
+                best_moves = child.data['moves']
+        if not best_moves:
+            raise Exception('expected best moves')
+        return best_moves
 
     def _get_static_eval(self, final_position):
         value = 0
-        data = final_position.data
+        edata = final_position.data['edata']
+        p1 = edata['players'][0]
+        p2 = edata['players'][1]
 
         # add health
-        p1_health = data['edata']['players'][0]['health']
-        p2_health = data['edata']['players'][1]['health']
+        p1_health = p1['health']
+        p2_health = p2['health']
         value += p1_health - p2_health
+
+        # add card counts
+        slot_scales = {
+            GameCard.SLOT_TABLE: 0.3,
+            GameCard.SLOT_HAND: 0.2,
+            GameCard.SLOT_DECK: 0.03,
+            GameCard.SLOT_GRAVE: 0.02,
+        }
+        for slot_key, scale in slot_scales.items():
+            p1_slot_cnt = len(p1[slot_key])
+            p2_slot_cnt = len(p2[slot_key])
+            value += p1_slot_cnt * scale - p2_slot_cnt * scale
 
         # adjust eval perspective (requires prev pos to determine if maximizing player)
         # e.g if maximizing player is p2, then flip eval
@@ -451,6 +481,7 @@ class Bot:
                 next_is_player_1 = is_player_1 if cdata['same_player'] else not is_player_1
 
                 pos_value = self.minimax(child, depth - 1, next_is_player_1)
+                cdata['value'] = pos_value
                 value = max(value, pos_value)
 
         else:  # player 2
@@ -464,6 +495,7 @@ class Bot:
                 cphase = cdata['edata']['phase']
                 next_is_player_1 = is_player_1 if cdata['same_player'] else not is_player_1
                 pos_value = self.minimax(child, depth - 1, next_is_player_1)
+                cdata['value'] = pos_value
                 value = min(value, pos_value)
 
         return value
