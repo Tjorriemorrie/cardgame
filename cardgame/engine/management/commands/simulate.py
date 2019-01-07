@@ -37,7 +37,7 @@ class Command(BaseCommand):
                 self.stdout.write('Setting up game...')
                 engine.setup_game()
             bot = Bot(engine)
-            bot.analyze()
+            best_eval, best_move = bot.analyze()
             break
 
         self.stdout.write('Script ended')

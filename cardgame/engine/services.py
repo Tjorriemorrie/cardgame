@@ -1,14 +1,15 @@
 from copy import deepcopy
 from random import choice, shuffle
 
-from django.forms import model_to_dict
-from treelib import Tree, Node
+from treelib import Tree
 
 from cards.models import Ability, Card
-from engine.models import Game, GameCard, Event
+from engine.models import Event, Game, GameCard
 
 
 class GameAdaptor:
+    """Adaptor to make it easier to read the state. It converts the state from models
+    to a dictionary and stores it in 'data'. It also has helpers to read the state."""
     
     def to_dict(self, game):
         self.data = {
@@ -70,6 +71,12 @@ class GameAdaptor:
     def is_status_setup(self):
         return self.data['status'] == Game.STATUS_SETUP
 
+    def is_status_busy(self):
+        return self.data['status'] == Game.STATUS_BUSY
+
+    def is_status_finished(self):
+        return self.data['status'] == Game.STATUS_DONE
+
     def is_phase_draw(self):
         return self.data['phase'] == Game.PHASE_DRAW
 
@@ -84,9 +91,6 @@ class GameAdaptor:
 
     def is_phase_upkeep(self):
         return self.data['phase'] == Game.PHASE_UPKEEP
-
-    def is_status_finished(self):
-        return self.data['status'] == Game.STATUS_DONE
 
     def get_player(self, active=True):
         i = self.data['turn'] - 1
@@ -159,7 +163,6 @@ class Engine(GameAdaptor):
             self.shuffle_deck(player)
             self.draw(player, Game.START_DRAW_NUMBER)
         self.next_status()
-        self.next_phase()
 
     def shuffle_deck(self, player):
         # randomizes the deck dictionary
@@ -310,7 +313,7 @@ class Engine(GameAdaptor):
         )
 
 
-class MonteCarloEngine(Engine):
+class MonteCarloEngineProxy(Engine):
 
     def save_game(self, *args, **kwargs):
         return
@@ -379,10 +382,10 @@ class Bot:
         flip_value = 1 if parent.data['edata']['turn'] == 1 else -1
         value *= flip_value
 
-        return value
+        return round(value, 2)
 
     def _create_node_from_moves(self, parent, moves):
-        e = MonteCarloEngine(parent.data['edata'])
+        e = MonteCarloEngineProxy(parent.data['edata'])
         turn_at_start = e.data['turn']
         for move in moves:
 
@@ -393,8 +396,13 @@ class Bot:
                 e.play_pass()
                 # next phase included in play_pass
                 same_player = e.data['turn'] == turn_at_start
-                node = self.tree.create_node(parent=parent, data={'edata': e.data, 'moves': [move], 'game_over': False,
-                                                                  'same_player': same_player})
+                data = {
+                    'edata': e.data,
+                    'moves': [move],
+                    'game_over': False,
+                    'same_player': same_player}
+                tag = 'p{}-pass'.format(turn_at_start)
+                node = self.tree.create_node(parent=parent, tag=tag, data=data)
                 return node
 
             elif move.is_type_person():
@@ -404,8 +412,13 @@ class Bot:
                 e.play_person(move.gcard)
                 # no next_phase here, only after opinions were played
                 same_player = e.data['turn'] == turn_at_start
-                node = self.tree.create_node(parent=parent, data={'edata': e.data, 'moves': [move], 'game_over': False,
-                                                                  'same_player': same_player})
+                data = {
+                    'edata': e.data,
+                    'moves': [move],
+                    'game_over': False,
+                    'same_player': same_player}
+                tag = 'p{}-person'.format(turn_at_start)
+                node = self.tree.create_node(parent=parent, tag=tag, data=data)
                 return node
 
             elif move.is_type_draw():
@@ -424,7 +437,7 @@ class Bot:
         raise Exception('expected moves...')
 
     def _add_children(self, parent):
-        e = MonteCarloEngine(parent.data['edata'])
+        e = MonteCarloEngineProxy(parent.data['edata'])
         nodes = []
 
         # pass
@@ -468,6 +481,7 @@ class Bot:
         pphase = pdata['edata']['phase']
 
         children = self._add_children(position)
+        self.tree.show()
 
         if is_player_1:
             value = -float('inf')
@@ -576,6 +590,3 @@ def create_random_game(persons, opinions):
     deck2 = create_random_deck(player2, persons, opinions)
     # done
     return game
-
-
-

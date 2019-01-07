@@ -10,6 +10,7 @@ class Ability(models.Model):
     BENEFIT_CHOICES = (
         (BENEFIT_M1G, 'Adds 1 generic mana'),
     )
+
     cost = models.CharField(max_length=3, choices=COST_CHOICES)
     benefit = models.CharField(max_length=3, choices=BENEFIT_CHOICES)
 
